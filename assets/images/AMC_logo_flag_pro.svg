@@ -1,0 +1,49 @@
+<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">AMC Logo – Professional Pakistani Flag Variant</title>
+  <desc id="desc">Precision green-and-white AMC monogram with flag-inspired crescent and star.</desc>
+  <defs>
+    <linearGradient id="greenFlagPro" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0A4B2C"/>
+      <stop offset="100%" stop-color="#0E6F3D"/>
+    </linearGradient>
+    <filter id="shadowPro" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2.4" flood-opacity="0.25" flood-color="#0A4B2C"/>
+    </filter>
+  </defs>
+
+  <!-- Background: precise thirds (white hoist, green fly) -->
+  <rect width="300" height="180" fill="#FFFFFF"/>
+  <rect x="60" width="240" height="180" fill="url(#greenFlagPro)"/>
+
+  <!-- Crescent aligned on fly side -->
+  <g transform="translate(210 90)" fill="#FFFFFF" filter="url(#shadowPro)">
+    <path d="M 0 -30 A 30 30 0 1 0 0 30 A 22 22 0 1 1 0 -30 Z"/>
+  </g>
+
+  <!-- Star relocated above the M, 5-point classic star -->
+  <g transform="translate(155 55)" fill="#FFFFFF" filter="url(#shadowPro)">
+    <polygon points="0,-10 2.94,-3.09 9.51,-3.09 4.28,1.18 6,8.09 0,4.5 -6,8.09 -4.28,1.18 -9.51,-3.09 -2.94,-3.09"/>
+  </g>
+
+  <!-- AMC Monogram (left-center, balanced to white hoist) -->
+  <g font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-weight="900" text-anchor="middle" fill="#0A4B2C" filter="url(#shadowPro)">
+    <text x="110" y="105" font-size="60" letter-spacing="-1">A</text>
+    <text x="155" y="105" font-size="60" letter-spacing="-1">M</text>
+    <text x="200" y="105" font-size="60" letter-spacing="-1">C</text>
+  </g>
+
+  <!-- Underline: crisp bar -->
+  <rect x="95" y="118" width="130" height="6" rx="3" fill="#FFFFFF" opacity="0.9" filter="url(#shadowPro)"/>
+
+  <!-- Pixel-precise corner ticks -->
+  <g stroke="#FFFFFF" stroke-width="3" stroke-linecap="square" opacity="0.65">
+    <path d="M10 20 H40"/>
+    <path d="M10 20 V50"/>
+    <path d="M290 20 H260"/>
+    <path d="M290 20 V50"/>
+    <path d="M10 160 H40"/>
+    <path d="M10 160 V130"/>
+    <path d="M290 160 H260"/>
+    <path d="M290 160 V130"/>
+  </g>
+</svg>

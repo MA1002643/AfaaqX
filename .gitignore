@@ -1,2 +1,132 @@
-SOFTWAREUSED.md
+# Documentation files
+SOFTWARE_AND_RESOURCES_USED.md
 PROJECT_STRUCTURE_AND_PHASING.md
+DEVELOPMENT_APPROACH.md
+github-board.md
+
+
+# Academic/Personal files
+Project files/
+*.docx
+*.pdf
+
+
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+.yarn/
+
+
+# Build Outputs
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+
+# Environment Variables
+.env
+.env*.local
+.env.local
+.env.development
+.env.development.local
+.env.test.local
+.env.production.local
+
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+
+# Debug Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+*.log
+
+
+# IDE & Editors
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+
+# VS Code settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+
+# ================================
+# Operating System
+# ================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+
+# Linux
+*~
+
+
+# Runtime & Cache
+*.pid
+*.seed
+*.pid.lock
+.cache/
+.parcel-cache/
+.turbo/
+
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+prisma/migrations/.snapshot
+
+
+# Miscellaneous
+*.pem
+*.key
+*.cert
+.vercel
+.netlify
+.serverless/
+tmp/
+temp/
+
+
+# Storybook
+storybook-static/
+
+
+# PWA files
+**/public/sw.js
+**/public/workbox-*.js
+
+
+# Sentry
+.sentryclirc
+.DS_Store

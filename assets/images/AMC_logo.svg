@@ -1,0 +1,101 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1F1F3D;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#2A2A4E;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1A1A2E;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF4D6D;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FF006E;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C1121F;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGrad2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D9FF;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#00B8D4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0099B7;stop-opacity:1" />
+    </linearGradient>
+    <filter id="blur">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
+    </filter>
+    <filter id="hardShadow">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.4" flood-color="#000000"/>
+    </filter>
+    <radialGradient id="innerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FF006E;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Outer Container -->
+  <rect width="200" height="200" fill="#0A0E27"/>
+  
+  <!-- Main Background Gradient -->
+  <rect width="200" height="200" fill="url(#metalGrad)" opacity="0.7"/>
+  
+  <!-- Radial Glow Background -->
+  <circle cx="100" cy="100" r="100" fill="url(#innerGlow)"/>
+  
+  <!-- Geometric Background Pattern -->
+  <g opacity="0.08">
+    <line x1="0" y1="0" x2="200" y2="200" stroke="#FF006E" stroke-width="0.5"/>
+    <line x1="200" y1="0" x2="0" y2="200" stroke="#00D9FF" stroke-width="0.5"/>
+    <circle cx="100" cy="100" r="80" fill="none" stroke="#FF006E" stroke-width="0.5"/>
+    <circle cx="100" cy="100" r="60" fill="none" stroke="#00D9FF" stroke-width="0.5"/>
+  </g>
+  
+  <!-- Bold Hexagon Accent Left -->
+  <polygon points="25,80 35,60 50,65 45,85 35,95" fill="none" stroke="url(#accentGrad)" stroke-width="2" opacity="0.6" filter="url(#hardShadow)"/>
+  
+  <!-- Bold Hexagon Accent Right -->
+  <polygon points="175,120 165,140 150,135 155,115 165,105" fill="none" stroke="url(#accentGrad2)" stroke-width="2" opacity="0.6" filter="url(#hardShadow)"/>
+  
+  <!-- Main Letters with 3D Effect -->
+  <g filter="url(#hardShadow)">
+    <!-- Letter A -->
+    <text x="25" y="120" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="url(#accentGrad)">A</text>
+    
+    <!-- Letter M -->
+    <text x="60" y="120" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="url(#accentGrad)">M</text>
+    
+    <!-- Letter C -->
+    <text x="125" y="120" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="url(#accentGrad2)">C</text>
+  </g>
+  
+  <!-- Subtle 3D Shadow Effect on Text -->
+  <g opacity="0.15" filter="url(#blur)">
+    <text x="27" y="123" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="#000000">A</text>
+    <text x="62" y="123" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="#000000">M</text>
+    <text x="127" y="123" font-family="'Helvetica Neue', Arial, sans-serif" font-size="82" font-weight="900" fill="#000000">C</text>
+  </g>
+  
+  <!-- Top Accent Line -->
+  <line x1="20" y1="55" x2="180" y2="55" stroke="url(#accentGrad)" stroke-width="3" opacity="0.8" stroke-linecap="round" filter="url(#hardShadow)"/>
+  
+  <!-- Bottom Accent Line -->
+  <line x1="20" y1="145" x2="180" y2="145" stroke="url(#accentGrad2)" stroke-width="3" opacity="0.8" stroke-linecap="round" filter="url(#hardShadow)"/>
+  
+  <!-- Dynamic Corner Squares -->
+  <g opacity="0.6" filter="url(#hardShadow)">
+    <rect x="15" y="15" width="12" height="12" fill="none" stroke="url(#accentGrad)" stroke-width="2"/>
+    <rect x="173" y="15" width="12" height="12" fill="none" stroke="url(#accentGrad2)" stroke-width="2"/>
+    <rect x="15" y="173" width="12" height="12" fill="none" stroke="url(#accentGrad2)" stroke-width="2"/>
+    <rect x="173" y="173" width="12" height="12" fill="none" stroke="url(#accentGrad)" stroke-width="2"/>
+  </g>
+  
+  <!-- Premium Center Accents -->
+  <g opacity="0.7">
+    <circle cx="42" cy="170" r="5" fill="url(#accentGrad)" filter="url(#hardShadow)"/>
+    <circle cx="158" cy="30" r="5" fill="url(#accentGrad2)" filter="url(#hardShadow)"/>
+  </g>
+  
+  <!-- Vertical Accent Bars -->
+  <g opacity="0.4" filter="url(#hardShadow)">
+    <rect x="18" y="45" width="2" height="110" fill="url(#accentGrad)"/>
+    <rect x="180" y="45" width="2" height="110" fill="url(#accentGrad2)"/>
+  </g>
+  
+  <!-- Central Horizontal Accent -->
+  <line x1="30" y1="100" x2="70" y2="100" stroke="url(#accentGrad)" stroke-width="2" opacity="0.4" stroke-linecap="round"/>
+  <line x1="130" y1="100" x2="170" y2="100" stroke="url(#accentGrad2)" stroke-width="2" opacity="0.4" stroke-linecap="round"/>
+</svg>
