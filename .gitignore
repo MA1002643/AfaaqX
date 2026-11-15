@@ -1,132 +1,136 @@
-# Documentation files
+# At this stage of the project this is a generic file which will be updated as the project progresses.
+# This section lists all the academic/personal files
+*.pdf
+Project files/
+*.docx
+
+
+# This section lists all the environment variables
+.env
+.env*.local
+.env.production.local
+.env.local
+.env.development
+.env.development.local
+.env.test.local
+
+# This section lists all the dependencies
+.yarn/
+.pnp/
+node_modules/
+.pnp.js
+
+
+# This section lists all the documentation files
 SOFTWARE_AND_RESOURCES_USED.md
 PROJECT_STRUCTURE_AND_PHASING.md
 DEVELOPMENT_APPROACH.md
 github-board.md
 
 
-# Academic/Personal files
-Project files/
-*.docx
-*.pdf
-
-
-# Dependencies
-node_modules/
-.pnp/
-.pnp.js
-.yarn/
-
-
-# Build Outputs
+# This section lists all the build outputs
 .next/
 out/
+*.tsbuildinfo
 build/
 dist/
-*.tsbuildinfo
 
-
-# Environment Variables
-.env
-.env*.local
-.env.local
-.env.development
-.env.development.local
-.env.test.local
-.env.production.local
-
-
-# Testing
-coverage/
+# This section lists all the testing files
 .nyc_output/
+coverage/
 *.lcov
 
 
-# Debug Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-logs/
-*.log
-
-
-# IDE & Editors
-.idea/
-*.swp
-*.swo
-*.sublime-workspace
-*.sublime-project
-
-
-# VS Code settings
+# This section lists all the VS Code settings
 .vscode/*
+!.vscode/extensions.json
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
-!.vscode/extensions.json
+
+
+# This section lists all the debug logs
+yarn-error.log*
+npm-debug.log*
+yarn-debug.log*
+logs/
+*.log
+pnpm-debug.log*
+lerna-debug.log*
+
+
+# This section lists all the IDE & Editors
+.idea/
+*.sublime-project
+*.swp
+*.swo
+*.sublime-workspace
 
 
 # ================================
-# Operating System
+# This section lists all the operating system files
 # ================================
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-.Spotlight-V100
-.Trashes
-
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-
-# Linux
+# This section lists all the Linux files
 *~
 
 
-# Runtime & Cache
+# This section lists all the Windows files
+Desktop.ini
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+
+
+# This section lists all the runtime & cache files
 *.pid
+.turbo/
 *.seed
 *.pid.lock
 .cache/
 .parcel-cache/
-.turbo/
 
 
-# Database
-*.sqlite
-*.sqlite3
-*.db
-prisma/migrations/.snapshot
-
-
-# Miscellaneous
+# This section lists all the miscellaneous files
 *.pem
+.netlify
 *.key
 *.cert
 .vercel
-.netlify
 .serverless/
 tmp/
 temp/
 
 
-# Storybook
-storybook-static/
-
-
-# PWA files
-**/public/sw.js
-**/public/workbox-*.js
-
-
-# Sentry
-.sentryclirc
+# This section lists all the macOS files
+._*
+.Spotlight-V100
+.AppleDouble
+.LSOverride
+.Trashes
 .DS_Store
+
+
+# This section lists all the database files
+*.db
+*.sqlite
+*.sqlite3
+prisma/migrations/.snapshot
+
+
+# This section lists all the dissertation folder and markdown files
+dissertation/**/*.md
+dissertation/
+
+
+# This section lists all the PWA files
+**/public/workbox-*.js
+**/public/sw.js
+
+
+# This section lists all the Sentry files
+.DS_Store
+.sentryclirc
+
+
+# This section lists all the Storybook files
+storybook-static/

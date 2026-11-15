@@ -1,0 +1,1821 @@
+# This section of the code defines the afaaqX API contract: backend HTTP API.
+openapi: 3.1.0
+info:
+  title: afaaqX API
+  version: 0.1.0
+  summary: Business management and customer-facing API for the afaaqX platform.
+  description: |
+    Authoritative HTTP contract for the afaaqX backend. Companion artefacts:
+      - Architecture: `docs/dissertation/architecture/`
+      - Database:    `docs/dissertation/database/`
+      - Auth design: `docs/dissertation/auth/`
+      - Error catalogue: `docs/api/error-catalog.md`
+
+    Conventions:
+      * All bodies are JSON unless explicitly noted.
+      * All datetimes are ISO 8601 UTC.
+      * All money fields are objects of `{ amount: string-decimal, currency: ISO-4217 }`.
+      * All ids are UUID v4.
+      * Mutating endpoints accept an `Idempotency-Key` header (UUID); replays return the original response.
+      * Pagination is cursor-based: `?cursor=&limit=` with `nextCursor` in response.
+      * Errors follow RFC 7807 (`application/problem+json`).
+  contact:
+    name: afaaqX engineering
+    email: engineering@afaaqx.example
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+# This section of the code defines the Production, local and staging base URLs.
+servers:
+  - url: https://api.afaaqx.com
+    description: Production
+  - url: http://localhost:4000
+    description: Local development
+  - url: https://staging-api.afaaqx.com
+    description: Staging
+
+# This section of the code defines the endpoint groups by business domain, used as navigation in Swagger UI/Redoc.
+tags:
+  - { name: auth, description: "Sign-in, sign-out, refresh" }
+  - { name: sessions, description: Active session management }
+  - { name: users, description: Customer and account profiles }
+  - { name: payments, description: Payment intents and webhooks }
+  - { name: assistant, description: AI chatbot for customer support }
+  - { name: files, description: Cloudinary asset registry }
+  - { name: webhooks, description: Inbound provider callbacks }
+  - { name: meta, description: "Health, info, public keys" }
+  - { name: staff, description: Staff profile administration }
+  - { name: roles, description: Roles and permissions (RBAC) }
+  - { name: categories, description: Product category tree }
+  - { name: products, description: Product catalogue }
+  - { name: cart, description: Customer cart }
+  - { name: orders, description: Product orders }
+  - { name: services, description: Bookable service catalogue }
+  - { name: appointments, description: Service appointments }
+
+# ─────────────────────────────────────────────────────────────────
+# Security
+# ─────────────────────────────────────────────────────────────────
+# This section of the code defines All endpoints and their security requirements.
+security:
+  - bearerAuth: []
+
+# This section of the code defines every API endpoint, grouped by domain.
+paths:
+  # ─────── Meta ───────
+  # This section of the code defines the public health checks and the JWKS public keys used to verify access tokens.
+  /healthz:
+    get:
+      operationId: getLiveness
+      tags: [meta]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/HealthOk" }
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags: [meta]
+      summary: Readiness probe (DB + Redis reachable)
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/HealthOk" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /.well-known/jwks.json:
+    get:
+      operationId: getJwks
+      tags: [meta]
+      summary: JWKS for verifying afaaqX access JWTs
+      security: []
+      responses:
+        "200":
+          description: JWK Set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JwkSet" }
+
+  # ─────── Auth ───────
+  # This section of the code defines registration, email/password sign-in, token refresh and logout.
+  /auth/register:
+    post:
+      operationId: registerCustomer
+      tags: [auth]
+      summary: Self-register a customer account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Account created; verification email sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Rotate refresh token and mint a new access token
+      security:
+        - refreshCookie: []
+      responses:
+        "200":
+          description: New access token + rotated refresh cookie
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: HttpOnly Secure rotated refresh cookie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Password login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/logout-all:
+    post:
+      operationId: logoutAll
+      tags: [auth]
+      summary: Revoke all refresh tokens for the current user
+      responses:
+        "204": { description: All sessions revoked }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke the current refresh token
+      security:
+        - refreshCookie: []
+      responses:
+        "204": { description: Logged out }
+
+  # ─────── Sessions ───────
+  # This section of the code defines the endpoints to list and revoke the user's signed-in devices.
+  /auth/sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List active sessions
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SessionInfo" }
+  /auth/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      tags: [sessions]
+      summary: Revoke a specific session
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─────── Staff ───────
+  # This section of the code defines the admin management of staff accounts.
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [staff]
+      summary: List staff
+      responses:
+        "200":
+          description: Staff list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StaffProfile" }
+    post:
+      operationId: createStaff
+      tags: [staff]
+      summary: Create staff account (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateStaffRequest" }
+      responses:
+        "201":
+          description: Staff created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffProfile" }
+
+  /staff/{id}:
+    patch:
+      operationId: updateStaff
+      tags: [staff]
+      summary: Update staff record
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateStaffRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffProfile" }
+    delete:
+      operationId: deactivateStaff
+      tags: [staff]
+      summary: Deactivate staff
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Deactivated }
+
+  # ─────── Users ───────
+  # This section of the code defines user profiles, self-service /me, and GDPR data export and erasure.
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users (staff/admin only)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - {
+            in: query,
+            name: q,
+            schema: { type: string },
+            description: Search by name/email,
+          }
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/UserStatus" },
+          }
+      responses:
+        "200":
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/User" }
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Staff/admin creates a user (e.g. walk-in customer)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Fetch user by id
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user (scoped by role)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Soft-delete a user
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Soft-deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [users]
+      summary: Current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    patch:
+      operationId: updateCurrentUser
+      tags: [users]
+      summary: Update own profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /users/{id}/erase:
+    post:
+      operationId: eraseUser
+      tags: [users]
+      summary: GDPR erasure (admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "202": { description: Anonymisation enqueued }
+
+  /users/{id}/export:
+    get:
+      operationId: exportUserData
+      tags: [users]
+      summary: GDPR data export
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: NDJSON export
+          content:
+            application/x-ndjson:
+              schema: { type: string, format: binary }
+
+  # ─────── Roles / RBAC ───────
+  # This section of the code defines role-based access control: roles grant fine-grained permissions.
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [roles]
+      summary: List roles
+      responses:
+        "200":
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Role" }
+
+  /users/{id}/roles:
+    post:
+      operationId: assignUserRole
+      tags: [roles]
+      summary: Assign a role to a user
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roleId]
+              properties:
+                roleId: { type: string, format: uuid }
+      responses:
+        "204": { description: Assigned }
+
+  /permissions:
+    get:
+      operationId: listPermissions
+      tags: [roles]
+      summary: List permissions (introspection)
+      responses:
+        "200":
+          description: Permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Permission" }
+
+  # ─────── Products ───────
+  # This section of code defines the public catalogue browsing; staff manage products, stock levels and images.
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: Browse published products
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - { in: query, name: q, schema: { type: string } }
+        - {
+            in: query,
+            name: categoryId,
+            schema: { type: string, format: uuid },
+          }
+        - { in: query, name: minPrice, schema: { type: number } }
+        - { in: query, name: maxPrice, schema: { type: number } }
+        - { in: query, name: inStock, schema: { type: boolean } }
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/ProductStatus" },
+            description: Drafts visible to staff/admin only,
+          }
+      responses:
+        "200":
+          description: Paginated products
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Product" }
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Create product (staff/admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProductRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+
+  /products/{id}/publish:
+    post:
+      operationId: publishProduct
+      tags: [products]
+      summary: Publish a drafted product
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get product
+      security: []
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProduct
+      tags: [products]
+      summary: Update product
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProductRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+    delete:
+      operationId: archiveProduct
+      tags: [products]
+      summary: Archive product (admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Archived }
+
+  /products/{id}/images:
+    post:
+      operationId: attachProductImage
+      tags: [products]
+      summary: Attach a previously uploaded Cloudinary asset (max 5)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachImageRequest" }
+      responses:
+        "201":
+          description: Attached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductImage" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ─────── Categories ───────
+  # This section of code defines the Hierarchical product category tree; changes are admin-only.
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List category tree
+      security: []
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+    post:
+      operationId: createCategory
+      tags: [categories]
+      summary: Create category (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCategoryRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+
+  /categories/{id}:
+    patch:
+      operationId: updateCategory
+      tags: [categories]
+      summary: Update a category (admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCategoryRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+    delete:
+      operationId: deleteCategory
+      tags: [categories]
+      summary: Delete category (admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Deleted }
+
+  # ─────── Cart ───────
+  # This section of code defines the server-side cart for the signed-in customer.
+  /cart:
+    get:
+      operationId: getCart
+      tags: [cart]
+      summary: Get current cart
+      responses:
+        "200":
+          description: Cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+    delete:
+      operationId: clearCart
+      tags: [cart]
+      summary: Empty the cart
+      responses:
+        "204": { description: Cleared }
+
+  /cart/items/{id}:
+    patch:
+      operationId: updateCartItem
+      tags: [cart]
+      summary: Update item quantity
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+    delete:
+      operationId: removeCartItem
+      tags: [cart]
+      summary: Remove item
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+
+  /cart/items:
+    post:
+      operationId: addCartItem
+      tags: [cart]
+      summary: Add or increment item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartItemUpsertRequest" }
+      responses:
+        "200":
+          description: Cart updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+
+  # ─────── Orders ───────
+  # This section of code defines order placement from the cart and staff-driven lifecycle (accept, fulfil, cancel).
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders (own for customer, all for staff)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/OrderStatus" },
+          }
+      responses:
+        "200":
+          description: Paginated orders
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Order" }
+    post:
+      operationId: placeOrder
+      tags: [orders]
+      summary: Place an order from the current cart
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceOrderRequest" }
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /orders/{id}/accept:
+    post:
+      operationId: acceptOrder
+      tags: [orders]
+      summary: Staff accepts order
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{id}/fulfil:
+    post:
+      operationId: fulfilOrder
+      tags: [orders]
+      summary: Mark order fulfilled (staff/admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Fulfilled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      tags: [orders]
+      summary: Cancel an order (scope by role)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  # ─────── Services ───────
+  # This section of code defines the bookable services and their public slot availability.
+  /services:
+    get:
+      operationId: listServices
+      tags: [services]
+      summary: List bookable services
+      security: []
+      responses:
+        "200":
+          description: Services
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Service" }
+    post:
+      operationId: createService
+      tags: [services]
+      summary: Create service (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateServiceRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+
+  /services/{id}/availability:
+    get:
+      operationId: getServiceAvailability
+      tags: [services]
+      summary: Available slots for a service in a date range
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - {
+            in: query,
+            name: from,
+            required: true,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            in: query,
+            name: to,
+            required: true,
+            schema: { type: string, format: date-time },
+          }
+        - { in: query, name: staffId, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AvailabilitySlot" }
+
+  /services/{id}:
+    patch:
+      operationId: updateService
+      tags: [services]
+      summary: Update service (admin)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateServiceRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+
+  # ─────── Appointments ───────
+  # This section of code defines the booking, accepting, rejecting and rescheduling appointments; double-booking returns 409.
+  /appointments:
+    get:
+      operationId: listAppointments
+      tags: [appointments]
+      summary: List appointments (own for customer, all for staff)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/AppointmentStatus" },
+          }
+      responses:
+        "200":
+          description: Paginated appointments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Appointment" }
+    post:
+      operationId: bookAppointment
+      tags: [appointments]
+      summary: Book an appointment
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookAppointmentRequest" }
+      responses:
+        "201":
+          description: Pending appointment created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "409":
+          description: Slot taken (double-booking prevented)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /appointments/{id}/accept:
+    post:
+      operationId: acceptAppointment
+      tags: [appointments]
+      summary: Staff accepts an appointment; payment link is generated
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Accepted with payment instructions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppointmentWithPayment" }
+
+  /appointments/{id}:
+    get:
+      operationId: getAppointment
+      tags: [appointments]
+      summary: Get appointment
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Appointment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+
+  /appointments/{id}/cancel:
+    post:
+      operationId: cancelAppointment
+      tags: [appointments]
+      summary: Cancel an appointment (scope by role)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+
+  /appointments/{id}/reject:
+    post:
+      operationId: rejectAppointment
+      tags: [appointments]
+      summary: Staff rejects an appointment
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+
+  /appointments/{id}/reschedule:
+    post:
+      operationId: rescheduleAppointment
+      tags: [appointments]
+      summary: Move appointment to a new slot
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [startsAt, endsAt]
+              properties:
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Rescheduled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+
+  # ─────── Payments ───────
+  # This section of code defines Stripe/PayPal payment intents and payment records; card data never touches afaaqX.
+  /payments:
+    get:
+      operationId: listPayments
+      tags: [payments]
+      summary: List payments (own for customer, all for staff)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/PaymentStatus" },
+          }
+      responses:
+        "200":
+          description: Paginated payments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Payment" }
+
+  /payments/{id}:
+    get:
+      operationId: getPayment
+      tags: [payments]
+      summary: Get payment
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Payment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+
+  /payments/intents:
+    post:
+      operationId: createPaymentIntent
+      tags: [payments]
+      summary: Create a payment intent / checkout for an existing order or appointment
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentIntentRequest" }
+      responses:
+        "201":
+          description: Payment intent created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentIntent" }
+
+  # ─────── Webhooks ───────
+  # This section of code defines signature-verified callbacks from Stripe and PayPal.
+  /webhooks/paypal:
+    post:
+      operationId: handlePaypalWebhook
+      tags: [webhooks]
+      summary: PayPal webhook receiver
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "204": { description: Accepted }
+
+  /webhooks/stripe:
+    post:
+      operationId: handleStripeWebhook
+      tags: [webhooks]
+      summary: Stripe webhook receiver (signature-verified)
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "204": { description: Accepted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─────── AI Assistant ───────
+  # This section of the code defines the AI chatbot; conversations are not stored, so the browser sends recent history with each message.
+  /assistant/messages:
+    post:
+      operationId: sendAssistantMessage
+      tags: [assistant]
+      summary: Ask the AI assistant a question and get a reply
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMessageRequest" }
+      responses:
+        "200":
+          description: Assistant reply
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantReply" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  # ─────── Files ───────
+  # This section of the code defines signed Cloudinary uploads so files go straight from the browser to Cloudinary.
+  /files/upload-signature:
+    post:
+      operationId: createUploadSignature
+      tags: [files]
+      summary: Issue a signed Cloudinary upload signature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadSignatureRequest" }
+      responses:
+        "200":
+          description: Signature payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSignature" }
+
+  /files/{id}:
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      summary: Delete file asset (scope by role)
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Deleted }
+
+# ─────────────────────────────────────────────────────────────────
+# Components
+# ─────────────────────────────────────────────────────────────────
+# This section of the code defines reusable definitions referenced via $ref.
+components:
+  # This section of the code defines the three ways a request can be authenticated.
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: afaaqX access JWT (see `docs/dissertation/auth/jwt-strategy.md`)
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: afx_rt
+      description: HttpOnly rotated refresh token cookie
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Provider-Signature
+      description: Provider-specific HMAC signature (Stripe, PayPal)
+
+  # This section of the code defines reusable error responses, all in RFC 7807 problem+json format.
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Authenticated but not permitted
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: Conflicts with existing state
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Validation:
+      description: Request body failed validation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ValidationProblem" }
+    Locked:
+      description: Account temporarily locked
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unavailable:
+      description: Service is unhealthy
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    HealthOk:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, enum: [ok] }
+
+  # This section of code defines shared path, query and header parameters.
+  parameters:
+    IdPath:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      in: query
+      name: cursor
+      schema: { type: string }
+      description: Opaque cursor returned by previous page
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema: { type: string, format: uuid }
+      description: Required for write replays to be deduplicated
+
+  # This section of code defines request and response data models, grouped by domain.
+  schemas:
+    # — Common —
+    # This section of code defines shared building blocks: Money, RFC 7807 errors and cursor pagination.
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: '^-?\d+\.\d{2}$', example: "12.50" }
+        currency: { type: string, enum: [GBP, PKR], example: GBP }
+
+    Problem:
+      type: object
+      description: RFC 7807 problem object
+      properties:
+        type:
+          {
+            type: string,
+            format: uri,
+            example: "https://errors.afaaqx.com/forbidden",
+          }
+        title: { type: string, example: "Forbidden" }
+        status: { type: integer, example: 403 }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          {
+            type: string,
+            description: afaaqX error code,
+            example: AUTH_FORBIDDEN,
+          }
+        traceId: { type: string, description: Correlates with logs/Sentry }
+
+    Page:
+      type: object
+      properties:
+        items: { type: array, items: { type: object } }
+        nextCursor: { type: [string, "null"] }
+
+    JwkSet:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ValidationProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+                  code: { type: string }
+
+    # — Auth —
+    # This section of code defines login, registration, token and session request/response bodies.
+    RegisterRequest:
+      type: object
+      required: [email, password, firstName, lastName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 10 }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        locale: { type: string, enum: [ENG, PKR], default: ENG }
+
+    TokenPair:
+      type: object
+      required: [accessToken, expiresIn]
+      properties:
+        accessToken: { type: string }
+        expiresIn: { type: integer, example: 900 }
+        tokenType: { type: string, example: Bearer }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AccessToken:
+      type: object
+      required: [accessToken, expiresIn]
+      properties:
+        accessToken: { type: string }
+        expiresIn: { type: integer }
+
+    SessionInfo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userAgent: { type: string }
+        ipAddress: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        current: { type: boolean }
+
+    # — Identity —
+    # This section of code defines users, staff, roles and permissions.
+    UserStatus: { type: string, enum: [active, suspended, deleted] }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        dateOfBirth: { type: [string, "null"], format: date }
+        phone: { type: [string, "null"] }
+        locale: { type: string, enum: [ENG, PKR] }
+        theme: { type: string, enum: [light, dark, system] }
+        status: { $ref: "#/components/schemas/UserStatus" }
+        emailVerified: { type: boolean }
+        roles:
+          {
+            type: array,
+            items: { type: string, enum: [ADMIN, STAFF, CUSTOMER] },
+          }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        locale: { type: string, enum: [ENG, PKR] }
+        theme: { type: string, enum: [light, dark, system] }
+        status: { $ref: "#/components/schemas/UserStatus" }
+
+    CreateUserRequest:
+      type: object
+      required: [email, firstName, lastName]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        role:
+          { type: string, enum: [CUSTOMER, STAFF, ADMIN], default: CUSTOMER }
+
+    CreateStaffRequest:
+      type: object
+      required: [email, firstName, lastName, staffNumber, dateOfBirth]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        staffNumber: { type: string }
+        jobTitle: { type: string }
+        department: { type: string }
+
+    StaffProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user: { $ref: "#/components/schemas/User" }
+        staffNumber: { type: string }
+        jobTitle: { type: [string, "null"] }
+        department: { type: [string, "null"] }
+        active: { type: boolean }
+        hiredAt: { type: [string, "null"], format: date-time }
+
+    Role:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, enum: [ADMIN, STAFF, CUSTOMER] }
+        description: { type: [string, "null"] }
+
+    UpdateStaffRequest:
+      type: object
+      properties:
+        jobTitle: { type: string }
+        department: { type: string }
+        active: { type: boolean }
+
+    Permission:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: "orders:accept" }
+        description: { type: [string, "null"] }
+
+    # — Catalogue —
+    # This section of code defines categories, products and images.
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        parentId: { type: [string, "null"], format: uuid }
+        sortOrder: { type: integer }
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        parentId: { type: [string, "null"], format: uuid }
+        sortOrder: { type: integer }
+
+    CreateCategoryRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        parentId: { type: [string, "null"], format: uuid }
+        sortOrder: { type: integer, default: 0 }
+
+    ProductStatus: { type: string, enum: [draft, published, archived] }
+
+    CreateProductRequest:
+      type: object
+      required: [categoryId, sku, name, slug, price, stockQuantity]
+      properties:
+        categoryId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        stockQuantity: { type: integer, minimum: 0 }
+        lowStockThreshold: { type: integer, minimum: 0, default: 5 }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, "null"] }
+        price: { $ref: "#/components/schemas/Money" }
+        stockQuantity: { type: integer }
+        lowStockThreshold: { type: integer }
+        status: { $ref: "#/components/schemas/ProductStatus" }
+        publishedAt: { type: [string, "null"], format: date-time }
+        images:
+          { type: array, items: { $ref: "#/components/schemas/ProductImage" } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ProductImage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        cloudinaryPublicId: { type: string }
+        sortOrder: { type: integer }
+        isPrimary: { type: boolean }
+
+    UpdateProductRequest:
+      type: object
+      properties:
+        categoryId: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        stockQuantity: { type: integer, minimum: 0 }
+        lowStockThreshold: { type: integer, minimum: 0 }
+        status: { $ref: "#/components/schemas/ProductStatus" }
+
+    AttachImageRequest:
+      type: object
+      required: [cloudinaryPublicId, url]
+      properties:
+        cloudinaryPublicId: { type: string }
+        url: { type: string, format: uri }
+        isPrimary: { type: boolean, default: false }
+
+    # — Cart / Orders —
+    # This section of code defines cart, order and address shapes plus the order status enum.
+    Cart:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        items: { type: array, items: { $ref: "#/components/schemas/CartItem" } }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        updatedAt: { type: string, format: date-time }
+
+    CartItemUpsertRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+
+    CartItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unitPriceSnapshot: { $ref: "#/components/schemas/Money" }
+        lineTotal: { $ref: "#/components/schemas/Money" }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNumber: { type: string }
+        userId: { type: string, format: uuid }
+        fulfilledBy: { type: [string, "null"], format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        items:
+          { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
+        shippingAddress: { $ref: "#/components/schemas/Address" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        tax: { $ref: "#/components/schemas/Money" }
+        shippingFee: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        notes: { type: [string, "null"] }
+        placedAt: { type: [string, "null"], format: date-time }
+        acceptedAt: { type: [string, "null"], format: date-time }
+        fulfilledAt: { type: [string, "null"], format: date-time }
+
+    OrderStatus:
+      {
+        type: string,
+        enum:
+          [new, accepted, processing, ready, fulfilled, cancelled, refunded],
+      }
+
+    PlaceOrderRequest:
+      type: object
+      required: [shippingAddressId]
+      properties:
+        shippingAddressId: { type: string, format: uuid }
+        notes: { type: string }
+
+    Address:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        line1: { type: string }
+        line2: { type: [string, "null"] }
+        city: { type: string }
+        region: { type: [string, "null"] }
+        postalCode: { type: string }
+        countryCode: { type: string }
+        isDefault: { type: boolean }
+
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer }
+        unitPrice: { $ref: "#/components/schemas/Money" }
+        lineTotal: { $ref: "#/components/schemas/Money" }
+
+    # — Services / Appointments —
+    # This section of the code defines services, availability slots and appointment booking/payment status.
+    Service:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: CV_ADVICE }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        durationMinutes: { type: integer }
+        basePrice: { $ref: "#/components/schemas/Money" }
+        requiresPayment: { type: boolean }
+        active: { type: boolean }
+
+    UpdateServiceRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        durationMinutes: { type: integer, minimum: 5 }
+        basePrice: { $ref: "#/components/schemas/Money" }
+        requiresPayment: { type: boolean }
+        active: { type: boolean }
+
+    CreateServiceRequest:
+      type: object
+      required: [code, name, durationMinutes, basePrice]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        durationMinutes: { type: integer, minimum: 5 }
+        basePrice: { $ref: "#/components/schemas/Money" }
+        requiresPayment: { type: boolean, default: true }
+
+    AppointmentStatus:
+      {
+        type: string,
+        enum: [pending, accepted, rejected, completed, cancelled, no_show],
+      }
+
+    AvailabilitySlot:
+      type: object
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        staffId: { type: [string, "null"], format: uuid }
+
+    AppointmentPaymentStatus:
+      { type: string, enum: [unpaid, pending, paid, failed, refunded] }
+
+    Appointment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        userId: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        assignedStaffId: { type: [string, "null"], format: uuid }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/AppointmentStatus" }
+        paymentStatus: { $ref: "#/components/schemas/AppointmentPaymentStatus" }
+        customerNotes: { type: [string, "null"] }
+        staffNotes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    BookAppointmentRequest:
+      type: object
+      required: [serviceId, startsAt]
+      properties:
+        serviceId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        customerNotes: { type: string }
+        assignedStaffId: { type: [string, "null"], format: uuid }
+
+    AppointmentWithPayment:
+      allOf:
+        - $ref: "#/components/schemas/Appointment"
+        - type: object
+          properties:
+            paymentUrl: { type: [string, "null"], format: uri }
+
+    # — Payments —
+    # This section of the code defines payment records, intents, providers and statuses.
+    PaymentStatus:
+      {
+        type: string,
+        enum:
+          [initiated, requires_action, succeeded, failed, refunded, expired],
+      }
+    PaymentMethod: { type: string, enum: [card, paypal, direct_debit] }
+    PaymentProvider: { type: string, enum: [stripe, paypal] }
+
+    CreatePaymentIntentRequest:
+      type: object
+      required: [provider, target]
+      properties:
+        provider: { $ref: "#/components/schemas/PaymentProvider" }
+        method: { $ref: "#/components/schemas/PaymentMethod" }
+        target:
+          type: object
+          oneOf:
+            - {
+                required: [orderId],
+                properties: { orderId: { type: string, format: uuid } },
+              }
+            - {
+                required: [appointmentId],
+                properties: { appointmentId: { type: string, format: uuid } },
+              }
+
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { $ref: "#/components/schemas/PaymentProvider" }
+        providerReference: { type: string }
+        method: { $ref: "#/components/schemas/PaymentMethod" }
+        amount: { $ref: "#/components/schemas/Money" }
+        status: { $ref: "#/components/schemas/PaymentStatus" }
+        orderId: { type: [string, "null"], format: uuid }
+        appointmentId: { type: [string, "null"], format: uuid }
+        initiatedAt: { type: string, format: date-time }
+        settledAt: { type: [string, "null"], format: date-time }
+
+    PaymentIntent:
+      type: object
+      properties:
+        paymentId: { type: string, format: uuid }
+        providerReference: { type: string }
+        checkoutUrl: { type: [string, "null"], format: uri }
+        clientSecret:
+          { type: [string, "null"], description: For Stripe Elements }
+        expiresAt: { type: string, format: date-time }
+
+    # — AI Assistant —
+    # This section of the code defines the AI chatbot request (new message plus recent history) and its reply.
+    AssistantChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string, maxLength: 2000 }
+
+    AssistantMessageRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 2000 }
+        history:
+          type: array
+          maxItems: 20
+          description: Previous turns kept in the browser (not stored server-side)
+          items: { $ref: "#/components/schemas/AssistantChatMessage" }
+
+    AssistantReply:
+      type: object
+      required: [reply]
+      properties:
+        reply: { type: string }
+
+    # — Files —
+    # This section of the code defines the cloudinary upload signature request and response.
+    UploadSignatureRequest:
+      type: object
+      required: [ownerType]
+      properties:
+        ownerType:
+          { type: string, enum: [product, order, appointment, user] }
+        ownerId: { type: string, format: uuid }
+        folder: { type: string }
+
+    UploadSignature:
+      type: object
+      properties:
+        signature: { type: string }
+        timestamp: { type: integer }
+        apiKey: { type: string }
+        cloudName: { type: string }
+        folder: { type: string }

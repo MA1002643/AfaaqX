@@ -1,0 +1,537 @@
+// This section of code is to generate the Prisma JS client.
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearchPostgres"]
+}
+
+// This section of code is for the postgreSQL connection.
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, citext, pg_trgm, btree_gist]
+}
+
+// ──────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines the UI colour theme a user prefers.
+enum Theme {
+  light
+  dark
+  system
+}
+
+// This section of code defines the language/locale a user or template uses.
+enum Locale {
+  ENG
+  PKR
+}
+
+// This section of code defines the lifecycle of a product in the catalogue.
+enum ProductStatus {
+  draft
+  published
+  archived
+}
+
+// This section of code defines whether a user account is active, suspended or soft-deleted.
+enum UserStatus {
+  active
+  suspended
+  deleted
+}
+
+// This section of code defines the lifecycle of a booked appointment.
+enum AppointmentStatus {
+  pending
+  accepted
+  rejected
+  completed
+  cancelled
+  no_show
+}
+
+// This section of code defines the lifecycle of a customer order from placement to fulfilment or refund.
+enum OrderStatus {
+  new
+  accepted
+  processing
+  ready
+  fulfilled
+  cancelled
+  refunded
+}
+
+// This section of code defines how the customer paid.
+enum PaymentMethod {
+  card
+  paypal
+  direct_debit
+}
+
+// This section of code defines the state of a payment as reported by the payment provider.
+enum PaymentStatus {
+  initiated
+  requires_action
+  succeeded
+  failed
+  refunded
+  expired
+}
+
+// This section of code defines the payment state tracked directly on an appointment.
+enum AppointmentPaymentStatus {
+  unpaid
+  pending
+  paid
+  failed
+  refunded
+}
+
+// This section of code defines the external payment gateway that processed the payment.
+enum PaymentProvider {
+  stripe
+  paypal
+}
+
+// This section of code defines which kind of record an uploaded file belongs to.
+enum AssetOwnerType {
+  product
+  order
+  appointment
+  user
+}
+
+// ──────────────────────────────────────────────────────────────
+// Identity and Access
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines every person with an account.
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  email         String     @unique @db.Citext
+  locale        Locale     @default(ENG)
+  theme         Theme      @default(system)
+  status        UserStatus @default(active)
+  emailVerified Boolean    @default(false) @map("email_verified")
+  entraObjectId String?    @unique @map("entra_object_id")
+  lastLoginAt   DateTime?  @map("last_login_at") @db.Timestamptz
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime?  @map("deleted_at") @db.Timestamptz
+  passwordHash  String?    @map("password_hash")
+  firstName     String     @map("first_name")
+  lastName      String     @map("last_name")
+  dateOfBirth   DateTime?  @map("date_of_birth") @db.Date
+  phone         String?
+
+  staffProfile    StaffProfile?
+  appointments    Appointment[]
+  payments        Payment[]
+  refreshTokens   RefreshToken[]
+  auditLogs       AuditLog[]
+  fileAssets      FileAsset[]
+  grantedRoles    UserRole[]     @relation("RoleGranter")
+  roles           UserRole[]
+  addresses       Address[]
+  cart            Cart?
+  orders          Order[]        @relation("CustomerOrders")
+  fulfilledOrders Order[]        @relation("StaffFulfilled")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("user")
+}
+
+// This section of code defines named roles.
+model Role {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  description String?
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("role")
+}
+
+// This section of code defines extra employment details for users who are staff members.
+model StaffProfile {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @map("user_id") @db.Uuid
+  staffNumber String    @unique @map("staff_number")
+  jobTitle    String?   @map("job_title")
+  department  String?
+  hiredAt     DateTime? @map("hired_at") @db.Timestamptz
+  active      Boolean   @default(true)
+
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedAppointments Appointment[]
+
+  @@map("staff_profile")
+}
+
+// This section of code defines the join table assigning roles to users, recording who granted each one.
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz
+  grantedBy String?  @map("granted_by") @db.Uuid
+
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  granter User? @relation("RoleGranter", fields: [grantedBy], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_role")
+}
+
+// This section of code defines a single permission code that can be granted to roles.
+model Permission {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique
+  description String?
+
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+// This section of code defines hashed refresh tokens for user sessions, revocable per device.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ipAddress String?   @map("ip_address") @db.Inet
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("refresh_token")
+}
+
+// This section of code defines the join table linking roles to the permissions they grant.
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Address
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines saved postal addresses for a user, used for shipping orders.
+model Address {
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  label       String?
+  postalCode  String  @map("postal_code")
+  countryCode String  @map("country_code")
+  isDefault   Boolean @default(false) @map("is_default")
+  line1       String
+  line2       String?
+  city        String
+  region      String?
+
+  @@index([userId])
+  @@map("address")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Catalogue
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines product categories, self-referencing to form a category tree.
+model Category {
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String  @unique
+  slug      String  @unique
+  parentId  String? @map("parent_id") @db.Uuid
+  sortOrder Int     @default(0) @map("sort_order")
+
+  @@index([parentId, sortOrder])
+  @@map("category")
+}
+
+// This section of code defines a sellable catalogue item with price, stock and publishing state.
+model Product {
+  id                String        @id @default(uuid()) @db.Uuid
+  categoryId        String        @map("category_id") @db.Uuid
+  sku               String        @unique
+  status            ProductStatus @default(draft)
+  publishedAt       DateTime?     @map("published_at") @db.Timestamptz
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  name              String
+  slug              String        @unique
+  description       String?
+  price             Decimal       @db.Decimal(12, 2)
+  currency          String
+  stockQuantity     Int           @default(0) @map("stock_quantity")
+  lowStockThreshold Int           @default(5) @map("low_stock_threshold")
+
+  category   Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images     ProductImage[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryId, status])
+  @@map("product")
+}
+
+// This section of code defines an image hosted on Cloudinary attached to a product.
+model ProductImage {
+  id                 String  @id @default(uuid()) @db.Uuid
+  cloudinaryPublicId String  @map("cloudinary_public_id")
+  sortOrder          Int     @default(0) @map("sort_order")
+  isPrimary          Boolean @default(false) @map("is_primary")
+  productId          String  @map("product_id") @db.Uuid
+  url                String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_image")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Cart
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a product line in a cart, with the price captured when added.
+model CartItem {
+  id                String  @id @default(uuid()) @db.Uuid
+  cartId            String  @map("cart_id") @db.Uuid
+  productId         String  @map("product_id") @db.Uuid
+  quantity          Int
+  unitPriceSnapshot Decimal @map("unit_price_snapshot") @db.Decimal(12, 2)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, productId])
+  @@map("cart_item")
+}
+
+// This section of code defines a user's single active shopping cart.
+model Cart {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("cart")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Orders
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a product line in an order with its final price and total.
+model OrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  lineTotal Decimal @map("line_total") @db.Decimal(12, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId])
+  @@map("order_item")
+}
+
+// This section of code defines a placed customer order with totals, status and fulfilment details.
+model Order {
+  id                String      @id @default(uuid()) @db.Uuid
+  orderNumber       String      @unique @map("order_number")
+  userId            String      @map("user_id") @db.Uuid
+  fulfilledBy       String?     @map("fulfilled_by") @db.Uuid
+  shippingAddressId String?     @map("shipping_address_id") @db.Uuid
+  placedAt          DateTime?   @map("placed_at") @db.Timestamptz
+  acceptedAt        DateTime?   @map("accepted_at") @db.Timestamptz
+  fulfilledAt       DateTime?   @map("fulfilled_at") @db.Timestamptz
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  status            OrderStatus @default(new)
+  subtotal          Decimal     @db.Decimal(12, 2)
+  tax               Decimal     @default(0) @db.Decimal(12, 2)
+  shippingFee       Decimal     @default(0) @map("shipping_fee") @db.Decimal(12, 2)
+  total             Decimal     @db.Decimal(12, 2)
+  currency          String
+  notes             String?
+
+  customer        User        @relation("CustomerOrders", fields: [userId], references: [id], onDelete: Restrict)
+  fulfiller       User?       @relation("StaffFulfilled", fields: [fulfilledBy], references: [id])
+  shippingAddress Address?    @relation(fields: [shippingAddressId], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+
+  @@index([userId, placedAt(sort: Desc)])
+  @@index([status, placedAt(sort: Desc)])
+  @@map("order")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Services and Appointments
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a bookable service offered by the business, with duration and price.
+model Service {
+  id              String  @id @default(uuid()) @db.Uuid
+  code            String  @unique
+  name            String
+  description     String?
+  durationMinutes Int     @map("duration_minutes")
+  basePrice       Decimal @map("base_price") @db.Decimal(12, 2)
+  currency        String
+  requiresPayment Boolean @default(true) @map("requires_payment")
+  active          Boolean @default(true)
+
+  appointments Appointment[]
+
+  @@map("service")
+}
+
+// This section of code defines a customer's booking of a service at a given time.
+model Appointment {
+  customer      User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  service       Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  assignedStaff StaffProfile? @relation(fields: [assignedStaffId], references: [id])
+  payments      Payment[]
+
+  id              String                   @id @default(uuid()) @db.Uuid
+  reference       String                   @unique
+  userId          String                   @map("user_id") @db.Uuid
+  serviceId       String                   @map("service_id") @db.Uuid
+  assignedStaffId String?                  @map("assigned_staff_id") @db.Uuid
+  paymentStatus   AppointmentPaymentStatus @default(unpaid) @map("payment_status")
+  customerNotes   String?                  @map("customer_notes")
+  staffNotes      String?                  @map("staff_notes")
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+  startsAt        DateTime                 @map("starts_at") @db.Timestamptz
+  endsAt          DateTime                 @map("ends_at") @db.Timestamptz
+  status          AppointmentStatus        @default(pending)
+
+  @@index([userId, startsAt(sort: Desc)])
+  @@index([assignedStaffId, startsAt])
+  @@index([status, startsAt])
+  @@map("appointment")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Payments
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a raw webhook event received from the payment provider for a payment.
+model PaymentEvent {
+  id                String   @id @default(uuid()) @db.Uuid
+  paymentId         String   @map("payment_id") @db.Uuid
+  eventType         String   @map("event_type")
+  payload           Json
+  signatureVerified Boolean  @default(false) @map("signature_verified")
+  receivedAt        DateTime @default(now()) @map("received_at") @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, receivedAt(sort: Desc)])
+  @@map("payment_event")
+}
+
+// This section of code defines a payment through Stripe/PayPal for an order, appointment or top-up.
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  provider          PaymentProvider
+  providerReference String          @unique @map("provider_reference")
+  userId            String          @map("user_id") @db.Uuid
+  orderId           String?         @map("order_id") @db.Uuid
+  appointmentId     String?         @map("appointment_id") @db.Uuid
+  amount            Decimal         @db.Decimal(12, 2)
+  currency          String
+  status            PaymentStatus   @default(initiated)
+  method            PaymentMethod
+  initiatedAt       DateTime        @default(now()) @map("initiated_at") @db.Timestamptz
+  settledAt         DateTime?       @map("settled_at") @db.Timestamptz
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order       Order?         @relation(fields: [orderId], references: [id])
+  appointment Appointment?   @relation(fields: [appointmentId], references: [id])
+  events      PaymentEvent[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("payment")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Files
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a generic uploaded file stored on Cloudinary and linked to an owner record.
+model FileAsset {
+  id                 String         @id @default(uuid()) @db.Uuid
+  sizeBytes          Int            @map("size_bytes")
+  ownerType          AssetOwnerType @map("owner_type")
+  ownerId            String?        @map("owner_id") @db.Uuid
+  uploadedAt         DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz
+  uploadedBy         String         @map("uploaded_by") @db.Uuid
+  cloudinaryPublicId String         @unique @map("cloudinary_public_id")
+  url                String
+  mimeType           String         @map("mime_type")
+
+  uploader User @relation(fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([ownerType, ownerId])
+  @@map("file_asset")
+}
+
+// ──────────────────────────────────────────────────────────────
+// Auditing
+// ──────────────────────────────────────────────────────────────
+
+// This section of code defines a record of who changed what, with before/after snapshots, for accountability.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  String?  @map("actor_role")
+  action     String
+  after      Json?
+  ipAddress  String?  @map("ip_address") @db.Inet
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  before     Json?
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@map("audit_log")
+}
