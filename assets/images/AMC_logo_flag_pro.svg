@@ -1,41 +1,48 @@
+<!-- This code is for the AMC logo with flag panel: includes the wordmark, crescent, star, and decorative elements; this makes it accessible to screen readers -->
 <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">AMC Logo – Professional Pakistani Flag Variant</title>
-  <desc id="desc">Precision green-and-white AMC monogram with flag-inspired crescent and star.</desc>
+  <!-- This code is for the accessible name announced by assistive technology for this graphic -->
+  <title id="title">AMC Logo</title>
+  <!-- This line is for the extended accessible description for screen-reader users -->
+  <desc id="desc">AMC monogram in bold dark-green lettering on a green flag panel, accompanied by a white crescent moon and star.</desc>
+  <!-- This section of code has the reusable definitions declared once here and referenced by id below -->
   <defs>
+  <!-- This section of code has the reusable definitions declared once here and referenced by id below -->
     <linearGradient id="greenFlagPro" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#0A4B2C"/>
       <stop offset="100%" stop-color="#0E6F3D"/>
     </linearGradient>
+    <!-- This section of code is for the Soft drop-shadow filter (offset down 1.5, blurred, 25% opacity) applied to logo elements for depth -->
     <filter id="shadowPro" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="1.5" stdDeviation="2.4" flood-opacity="0.25" flood-color="#0A4B2C"/>
     </filter>
   </defs>
 
-  <!-- Background: precise thirds (white hoist, green fly) -->
+  <!-- This line of code is for the White background rectangle covering the full canvas -->
   <rect width="300" height="180" fill="#FFFFFF"/>
+  <!-- This line of code is for the green flag panel on the right filled with the gradient defined above -->
   <rect x="60" width="240" height="180" fill="url(#greenFlagPro)"/>
 
-  <!-- Crescent aligned on fly side -->
+  <!-- This section of code is for the crescent moon: a large filled circle with a smaller offset arc cut out of it -->
   <g transform="translate(210 90)" fill="#FFFFFF" filter="url(#shadowPro)">
     <path d="M 0 -30 A 30 30 0 1 0 0 30 A 22 22 0 1 1 0 -30 Z"/>
   </g>
 
-  <!-- Star relocated above the M, 5-point classic star -->
+  <!-- This section of code is for the five-pointed star drawn as a polygon -->
   <g transform="translate(155 55)" fill="#FFFFFF" filter="url(#shadowPro)">
     <polygon points="0,-10 2.94,-3.09 9.51,-3.09 4.28,1.18 6,8.09 0,4.5 -6,8.09 -4.28,1.18 -9.51,-3.09 -2.94,-3.09"/>
   </g>
 
-  <!-- AMC Monogram (left-center, balanced to white hoist) -->
+  <!-- This section of code is for the "AMC" wordmark, in dark green colour -->
   <g font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-weight="900" text-anchor="middle" fill="#0A4B2C" filter="url(#shadowPro)">
     <text x="110" y="105" font-size="60" letter-spacing="-1">A</text>
     <text x="155" y="105" font-size="60" letter-spacing="-1">M</text>
     <text x="200" y="105" font-size="60" letter-spacing="-1">C</text>
   </g>
 
-  <!-- Underline: crisp bar -->
+  <!-- This line of code is for the rounded white underline bar under the wordmark -->
   <rect x="95" y="118" width="130" height="6" rx="3" fill="#FFFFFF" opacity="0.9" filter="url(#shadowPro)"/>
 
-  <!-- Pixel-precise corner ticks -->
+  <!-- This section of code is for the decorative corner brackets: four L-shaped white marks framing the design (top-left, top-right, bottom-left, bottom-right) -->
   <g stroke="#FFFFFF" stroke-width="3" stroke-linecap="square" opacity="0.65">
     <path d="M10 20 H40"/>
     <path d="M10 20 V50"/>
